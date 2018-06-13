@@ -1,0 +1,27 @@
+---
+
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: debian-slim
+  namespace: supersecrets
+  labels:
+    app: debian-slim
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: debian-slim
+  template:
+    metadata:
+      labels:
+        app: debian-slim
+    spec:
+      containers:
+        - name: app
+          image: debian:stretch-slim
+          command: ["sleep", "3600"]
+          imagePullPolicy: Always
+          envFrom:
+          - secretRef:
+              name: mysecret
