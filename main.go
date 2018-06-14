@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,26 +15,17 @@ import (
 	"github.com/kelseyhightower/envconfig"
 )
 
-//Environment Variables
+//Specication Environment Variables
 type Specification struct {
-	AWS_ACCESS_KEY string `required:false`
-	AWS_SECRET_KEY string `required:false`
+	AWS_ACCESS_KEY     string `required:false`
+	AWS_SECRET_KEY     string `required:false`
+	SecretPrefix       string `default:"kubernetes"`
+	ExcludedNamespaces string `default:"default,kube-public,kube-system,docker"`
 }
 
 type AppSecrets struct {
 	SecretMap map[string]interface{}
 }
-
-// func (s *Specification) unPackSecrets() {
-// 	for {
-// 		var secrets AppSecrets
-// 		unpackedSecrets := s.awssecrets(secrets, "testing-stage")
-
-// 		fmt.Println(unpackedSecrets.SecretMap)
-// 		time.Sleep(60 * time.Second)
-// 	}
-// 	return
-// }
 
 func (s *Specification) listNameSpaces() {
 	client, err := k8s.NewInClusterClient()
@@ -49,57 +39,52 @@ func (s *Specification) listNameSpaces() {
 	}
 
 	for _, ns := range ns.Items {
-		namespaceRaw := fmt.Sprintf("name=%s\n", *ns.Metadata.Name)
-		namespace := strings.Trim(namespaceRaw, "name=")
+		namespaceRaw := fmt.Sprintf("name=%s", *ns.Metadata.Name)
+		//trim off name= from namespaceRaw
+		namespace := namespaceRaw[5:]
 
-		secretName := fmt.Sprintf("%sSecret", namespace)
-		var secrets AppSecrets
-		secrets = s.awssecrets(secrets, namespace)
+		exclusions := strings.Split(s.ExcludedNamespaces, ",")
 
-		fmt.Println("Secrets map is: ")
-		fmt.Println(secrets)
-		// test if secrets are base64 encoded or not
-		for k, v := range secrets.SecretMap {
-			value := fmt.Sprintf("%s", v)
-			if IsBase64(value) {
-				fmt.Println("already base64 encoded")
+		if !stringInSlice(namespace, exclusions) {
+			fmt.Println("Namespace: ", namespace)
+
+			secretName := fmt.Sprintf("%s-secret", namespace)
+			var secrets AppSecrets
+			secrets, err = s.awssecrets(secrets, namespace)
+			if err != nil {
+				fmt.Println("Secret does not exist in AWS Secrets manager\n")
 			} else {
-				fmt.Println("base64 encoding value")
-				str, _ := v.(string)
-				valueByte := []byte(str)
-				v := EncodeBase64(valueByte)
-				secrets.SecretMap[k] = []byte(v)
+				//create secret if no errors returned from AWS Secrets Manager
+				createSecret(client, namespace, secretName, secrets)
 			}
-			fmt.Println("about to call createSecret func")
+		} else {
+			fmt.Printf("%s is part of Excluded Namespaces\n", namespace)
 		}
-		createSecret(client, namespace, secretName, secrets)
 	}
-	time.Sleep(60 * time.Second)
+	time.Sleep(90 * time.Second)
 }
 
-func IsBase64(s string) bool {
-	_, err := base64.StdEncoding.DecodeString(s)
-	return err == nil
-}
-
-func EncodeBase64(s []byte) []byte {
-	encoded := base64.StdEncoding.EncodeToString([]byte(s))
-
-	return []byte(encoded)
+func stringInSlice(str string, list []string) bool {
+	for _, v := range list {
+		if v == str {
+			return true
+		}
+	}
+	return false
 }
 
 func createSecret(client *k8s.Client, namespace string, name string, v AppSecrets) error {
 
-	fmt.Println("In create secret func")
+	fmt.Println("Trying to create/update secret for: ", namespace)
+
 	//Convert SecretMap from map[string]interface{} to map[string][]byte
 	SecretMap := v.SecretMap
-
 	SecretMapByte := make(map[string][]byte)
-	for key, value := range SecretMap {
-		switch value := value.(type) {
-		case string:
-			SecretMap[key] = value
-		}
+
+	for k, v := range SecretMap {
+		str, _ := v.(string)
+		valueByte := []byte(str)
+		SecretMapByte[k] = valueByte
 	}
 
 	sm := &corev1.Secret{
@@ -110,7 +95,10 @@ func createSecret(client *k8s.Client, namespace string, name string, v AppSecret
 		Data: SecretMapByte,
 	}
 
-	err := client.Create(context.TODO(), sm)
+	err := client.Update(context.TODO(), sm)
+	if err != nil {
+		fmt.Println(err)
+	}
 
 	// If an HTTP error was returned by the API server, it will be of type
 	// *k8s.APIError. This can be used to inspect the status code.
@@ -133,9 +121,8 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	s.listNameSpaces()
-
-	//Gather secrets
-	//s.unPackSecrets()
+	for {
+		s.listNameSpaces()
+	}
 
 }

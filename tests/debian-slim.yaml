@@ -4,7 +4,7 @@ apiVersion: apps/v1beta2
 kind: Deployment
 metadata:
   name: debian-slim
-  namespace: supersecrets
+  namespace: testing-stage
   labels:
     app: debian-slim
 spec:
@@ -24,4 +24,4 @@ spec:
           imagePullPolicy: Always
           envFrom:
           - secretRef:
-              name: mysecret
+              name: testing-stage-secret

@@ -10,14 +10,14 @@ import (
 	"github.com/aws/aws-sdk-go/service/secretsmanager"
 )
 
-func (s *Specification) awssecrets(a AppSecrets, namespace string) AppSecrets {
+func (s *Specification) awssecrets(a AppSecrets, namespace string) (AppSecrets, error) {
 	//create session to AWS SDK
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1"),
 	}))
 	svc := secretsmanager.New(sess)
 
-	secretPath := fmt.Sprintf("kubernetes/testing-stage")
+	secretPath := fmt.Sprintf("%s/%s", s.SecretPrefix, namespace)
 
 	input := &secretsmanager.GetSecretValueInput{
 		SecretId: aws.String(secretPath),
@@ -50,17 +50,8 @@ func (s *Specification) awssecrets(a AppSecrets, namespace string) AppSecrets {
 		if err != nil {
 			panic(err)
 		}
-		return a
+		return a, err
 
 	}
-	//fmt.Println(a.SecretMap)
-	// bytes := []byte(value)
-
-	// err = json.Unmarshal(bytes, &a)
-	// if err != nil {
-	// 	panic(err)
-	// }
-
-	// fmt.Printf("Hello: %s", a.Builder
-	return a
+	return a, err
 }
