@@ -18,7 +18,7 @@ How it works:
 
 
 
-### Example Kubernetes  (Note the "envFrom" key:
+### Example Kubernetes  (Note the "envFrom" key)
 
 
 ```
